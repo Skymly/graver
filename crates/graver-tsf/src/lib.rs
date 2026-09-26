@@ -15,9 +15,11 @@
 //! or initialize COM from DllMain.
 
 mod client;
+mod decision;
 mod protocol;
 
 pub use client::{ClientError, IO_TIMEOUT_MS, Session};
+pub use decision::{KeyDecision, KeyModifiers, PreviewKey, decide_key, preview_eaten};
 pub use protocol::{
     ClientRequest, ClientResponse, CompositionUpdate, KeyKind, KeyRequest, PIPE_NAME,
     PROTOCOL_VERSION, ProtocolError,
