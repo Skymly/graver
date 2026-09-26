@@ -315,6 +315,68 @@ mod tests {
         drop(pipe);
     }
 
+    #[test]
+    fn handwritten_key_frame_reaches_the_engine() {
+        let name = unique_pipe_name("Golden");
+        assert_ne!(name, PIPE_NAME);
+        let ready = AtomicBool::new(false);
+        thread::scope(|scope| {
+            let server = scope.spawn(|| serve_pipe_once(&name, &ready));
+            let start = Instant::now();
+            while !ready.load(Ordering::SeqCst) {
+                if server.is_finished() {
+                    panic!("server exited before listening: {:?}", server.join());
+                }
+                if start.elapsed() > Duration::from_secs(5) {
+                    panic!("timed out waiting for {name}");
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+
+            let payload = br#"{"op":"key","v":1,"id":4,"key":{"kind":"char","ch":"a","shift":false,"ctrl":false,"alt":false}}"#;
+            let response = exchange_payload(&name, payload).unwrap();
+            server.join().unwrap().unwrap();
+            match response {
+                Response::Update {
+                    id,
+                    preedit,
+                    consumed,
+                    commit,
+                    ..
+                } => {
+                    assert_eq!(id, 4);
+                    assert_eq!(preedit, "a");
+                    assert!(consumed);
+                    assert!(commit.is_none());
+                }
+                other => panic!("unexpected response: {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn settings_probe_frame_still_reaches_the_listener() {
+        let name = unique_pipe_name("Probe");
+        assert_ne!(name, PIPE_NAME);
+        let ready = AtomicBool::new(false);
+        thread::scope(|scope| {
+            let server = scope.spawn(|| serve_pipe_once(&name, &ready));
+            let start = Instant::now();
+            while !ready.load(Ordering::SeqCst) {
+                if server.is_finished() {
+                    panic!("server exited before listening: {:?}", server.join());
+                }
+                if start.elapsed() > Duration::from_secs(5) {
+                    panic!("timed out waiting for {name}");
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+
+            let response = exchange_payload(&name, br#"{"v":1,"id":1,"op":"ping"}"#).unwrap();
+            server.join().unwrap().unwrap();
+            assert!(matches!(response, Response::Pong { id: 1, .. }));
+        });
+    }
     fn open_client(name: &str) -> Result<OwnedHandle, ServiceError> {
         let wide = wide_null(name);
         // SAFETY: `wide` is NUL-terminated. The returned handle is owned by the caller.
@@ -339,6 +401,14 @@ mod tests {
         read_response(&pipe)
     }
 
+    fn exchange_payload(name: &str, payload: &[u8]) -> Result<Response, ServiceError> {
+        let mut frame = Vec::with_capacity(4 + payload.len());
+        frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        frame.extend_from_slice(payload);
+        let pipe = open_client(name)?;
+        write_all(&pipe, &frame)?;
+        read_response(&pipe)
+    }
     fn read_response(pipe: &OwnedHandle) -> Result<Response, ServiceError> {
         let mut decoder = FrameDecoder::new();
         let mut buf = [0u8; 4096];

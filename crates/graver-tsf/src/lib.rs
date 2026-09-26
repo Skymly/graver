@@ -10,6 +10,18 @@
 //!
 //! A registered text service also needs an i686 build with the same CLSID.
 //! This scaffold builds the host architecture only.
+//!
+//! This crate does not define DllMain. Do not connect the pipe, create a thread,
+//! or initialize COM from DllMain.
+
+mod client;
+mod protocol;
+
+pub use client::{ClientError, IO_TIMEOUT_MS, Session};
+pub use protocol::{
+    ClientRequest, ClientResponse, CompositionUpdate, KeyKind, KeyRequest, PIPE_NAME,
+    PROTOCOL_VERSION, ProtocolError,
+};
 
 use windows::{
     Win32::{
