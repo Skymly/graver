@@ -1,7 +1,9 @@
 //! Named-pipe transport.
 //!
-//! The default DACL still grants read access to Everyone. Tighten it to the
-//! current user before this process listens for a real input session.
+//! [`create_pipe`] installs an explicit DACL for the current user and rejects
+//! remote clients. Do not fall back to a null descriptor: the default DACL
+//! grants Everyone read access. AppContainer hosts may be unable to connect;
+//! the text service returns the key instead of widening this ACL.
 
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +26,7 @@ use windows::{
     core::{Error, HRESULT, PCWSTR},
 };
 
-use crate::{ServiceError, dispatch};
+use crate::{ServiceError, dispatch, security::CurrentUserPipeSecurity};
 
 pub fn serve_pipe(name: &str) -> Result<(), ServiceError> {
     eprintln!("Graver service listening on {name}");
@@ -75,8 +77,14 @@ fn session(pipe: OwnedHandle) -> Result<(), ServiceError> {
     Ok(())
 }
 
+/// Production pipe constructor. [`serve_pipe`] and [`serve_pipe_once`] are the
+/// only listeners, and both call this function. There is no null-descriptor path.
 fn create_pipe(name: &str) -> Result<OwnedHandle, ServiceError> {
+    let mut security = CurrentUserPipeSecurity::for_current_user()?;
     let wide = wide_null(name);
+    let attributes = security.attributes();
+    // SAFETY: `wide` is NUL-terminated. `attributes` borrows `security`, which
+    // outlives this call. The kernel copies the descriptor before returning.
     let handle = unsafe {
         CreateNamedPipeW(
             PCWSTR(wide.as_ptr()),
@@ -86,7 +94,7 @@ fn create_pipe(name: &str) -> Result<OwnedHandle, ServiceError> {
             64 * 1024,
             64 * 1024,
             0,
-            None,
+            Some(&attributes),
         )
     };
     if handle.is_invalid() {
@@ -152,16 +160,28 @@ fn is_win32(err: &Error, code: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graver_ipc::{PIPE_NAME, Request, Response, decode_response, encode_request};
+    use crate::security::inspect;
+    use graver_ipc::{
+        KeyKindMessage, KeyMessage, PIPE_NAME, Request, Response, decode_response, encode_request,
+    };
+    use std::sync::atomic::AtomicU64;
     use std::time::{Duration, Instant};
     use windows::Win32::{
         Foundation::{GENERIC_READ, GENERIC_WRITE},
         Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_MODE, OPEN_EXISTING},
+        System::Pipes::GetNamedPipeInfo,
     };
+
+    fn unique_pipe_name(label: &str) -> String {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        format!(r"\\.\pipe\Graver.{label}.{}.{n}", std::process::id())
+    }
 
     #[test]
     fn ping_over_named_pipe() {
-        let name = format!("{PIPE_NAME}.Test.{}", std::process::id());
+        let name = unique_pipe_name("Ping");
+        assert_ne!(name, PIPE_NAME);
         let ready = AtomicBool::new(false);
         thread::scope(|scope| {
             let server = scope.spawn(|| serve_pipe_once(&name, &ready));
@@ -182,8 +202,122 @@ mod tests {
         });
     }
 
-    fn client_exchange(name: &str, request: &Request) -> Result<Response, ServiceError> {
+    #[test]
+    fn key_over_named_pipe_reaches_the_engine() {
+        let name = unique_pipe_name("Key");
+        assert_ne!(name, PIPE_NAME);
+        let ready = AtomicBool::new(false);
+        thread::scope(|scope| {
+            let server = scope.spawn(|| serve_pipe_once(&name, &ready));
+            let start = Instant::now();
+            while !ready.load(Ordering::SeqCst) {
+                if server.is_finished() {
+                    panic!("server exited before listening: {:?}", server.join());
+                }
+                if start.elapsed() > Duration::from_secs(5) {
+                    panic!("timed out waiting for {name}");
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+
+            let response = client_exchange(
+                &name,
+                &Request::Key {
+                    v: 1,
+                    id: 2,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Char { ch: 'q' },
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            )
+            .unwrap();
+            server.join().unwrap().unwrap();
+            match response {
+                Response::Update {
+                    preedit,
+                    consumed,
+                    commit,
+                    candidates,
+                    ..
+                } => {
+                    assert_eq!(preedit, "q");
+                    assert!(consumed);
+                    assert!(commit.is_none());
+                    assert!(candidates.is_empty());
+                }
+                other => panic!("unexpected response: {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn production_pipe_dacl_allows_only_the_current_user() {
+        let name = unique_pipe_name("Acl");
+        assert_ne!(name, PIPE_NAME);
+        assert!(name.starts_with(r"\\.\pipe\Graver."));
+        // Same constructor the production listener calls. No graver-service process.
+        let pipe = create_pipe(&name).unwrap();
+        let dacl = inspect::read_allow_entries(raw(&pipe)).unwrap();
+        let user = inspect::current_user_sid_bytes().unwrap();
+        assert!(
+            !dacl.allow.is_empty(),
+            "DACL does not allow the current user"
+        );
+        assert!(
+            dacl.allow.iter().all(|sid| inspect::sid_equal(sid, &user)),
+            "allow list is not only the current user: {:?}",
+            dacl.allow_strings
+        );
+
+        let forbidden = inspect::forbidden_sids().unwrap();
+        for entry in &forbidden {
+            assert_eq!(
+                inspect::sid_string(&entry.bytes).unwrap(),
+                entry.string_sid,
+                "{} well-known SID did not match {}",
+                entry.label,
+                entry.string_sid
+            );
+            assert!(
+                dacl.allow
+                    .iter()
+                    .all(|allow| !inspect::sid_equal(allow, &entry.bytes)),
+                "{} ({}) is in the allow list: {:?}",
+                entry.label,
+                entry.string_sid,
+                dacl.allow_strings
+            );
+            assert!(
+                !dacl.allow_strings.iter().any(|got| got == entry.string_sid),
+                "{} ({}) string is in the allow list: {:?}",
+                entry.label,
+                entry.string_sid,
+                dacl.allow_strings
+            );
+        }
+
+        let mut flags = PIPE_TYPE_BYTE;
+        // SAFETY: `pipe` is a live named-pipe handle created by `create_pipe`.
+        unsafe {
+            GetNamedPipeInfo(raw(&pipe), Some(&mut flags), None, None, None).unwrap();
+        }
+        assert!(
+            flags.contains(PIPE_REJECT_REMOTE_CLIENTS),
+            "PIPE_REJECT_REMOTE_CLIENTS missing from {flags:?}"
+        );
+
+        // Same-user client can open the restricted pipe. Close both handles here.
+        let client = open_client(&name).unwrap();
+        drop(client);
+        drop(pipe);
+    }
+
+    fn open_client(name: &str) -> Result<OwnedHandle, ServiceError> {
         let wide = wide_null(name);
+        // SAFETY: `wide` is NUL-terminated. The returned handle is owned by the caller.
         let handle = unsafe {
             CreateFileW(
                 PCWSTR(wide.as_ptr()),
@@ -196,7 +330,11 @@ mod tests {
             )
         }
         .map_err(|err| ServiceError::Windows(err.to_string()))?;
-        let pipe = unsafe { OwnedHandle::from_raw_handle(handle.0) };
+        Ok(unsafe { OwnedHandle::from_raw_handle(handle.0) })
+    }
+
+    fn client_exchange(name: &str, request: &Request) -> Result<Response, ServiceError> {
+        let pipe = open_client(name)?;
         write_all(&pipe, &encode_request(request)?)?;
         read_response(&pipe)
     }

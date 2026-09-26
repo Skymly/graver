@@ -6,6 +6,7 @@
 
 mod dispatch;
 mod pipe;
+mod security;
 mod stdio;
 
 pub use dispatch::dispatch;
