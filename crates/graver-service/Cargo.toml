@@ -1,0 +1,22 @@
+[package]
+name = "graver-service"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "Resident composition process for Graver. One engine session per connection."
+
+[dependencies]
+graver-engine = { path = "../graver-engine" }
+graver-ipc = { path = "../graver-ipc" }
+thiserror.workspace = true
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+] }
+
+[lints]
+workspace = true

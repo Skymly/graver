@@ -1,0 +1,11 @@
+target/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+.idea/
+*.DotSettings.user
+Thumbs.db
+.DS_Store
+*.log

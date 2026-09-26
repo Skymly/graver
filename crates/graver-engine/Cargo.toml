@@ -1,0 +1,10 @@
+[package]
+name = "graver-engine"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+description = "Composition session for Graver. No operating-system dependency."
+
+[lints]
+workspace = true

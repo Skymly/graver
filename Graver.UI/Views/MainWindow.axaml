@@ -1,0 +1,70 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Graver.UI.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="880" d:DesignHeight="640"
+        x:Class="Graver.UI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Graver"
+        Width="880"
+        Height="640"
+        MinWidth="760"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Inter, Microsoft YaHei UI, Segoe UI">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid Margin="32" RowDefinitions="Auto,*,Auto" RowSpacing="24">
+        <StackPanel Spacing="6">
+            <TextBlock Text="Graver" FontSize="34" FontWeight="SemiBold"/>
+            <TextBlock Classes="muted" Text="设置界面。它不会被注入到其他程序。"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="16">
+                <TextBlock Classes="muted"
+                           Text="系统入口留在各个应用进程里。组字引擎和这个窗口留在外面，避免把运行时和词库注入宿主。"/>
+
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                    <Border Classes="card" Grid.Column="0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="section" Text="系统入口"/>
+                            <TextBlock Classes="muted" Text="graver_tsf.dll 会被加载进每个应用。目前只导出 COM 入口，注册会失败，所以还不会出现在输入法列表里。"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="card" Grid.Column="1">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="section" Text="组字引擎"/>
+                            <TextBlock Classes="muted" Text="graver-service 常驻在用户会话里。每个连接有自己的会话。当前方案只缓冲字符，不是拼音或五笔。"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="card" Grid.Column="2">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="section" Text="设置"/>
+                            <TextBlock Classes="muted" Text="方案、词库和外观以后放在这里。探测只确认管道还活着。"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                    <Button Grid.Column="0"
+                            Content="探测服务"
+                            Command="{Binding PingCommand}"
+                            MinWidth="120"
+                            HorizontalAlignment="Left"
+                            HorizontalContentAlignment="Center"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding Status}"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"/>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="2" Classes="muted" Text="0.1.0 · 尚未注册到系统"/>
+    </Grid>
+</Window>
