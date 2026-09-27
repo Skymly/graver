@@ -1,11 +1,17 @@
-//! Placeholder composition session.
+//! Composition sessions.
 //!
-//! A real schema replaces [`Engine::handle`] without changing [`Input`] or [`Update`].
+//! [`Engine`] is the latin-buffer scaffold used by graver-service.
+//! [`pinyin_min`] is a separate exact-match schema. It is not selected by
+//! that service or by the text service. Both use [`Input`] and [`Update`].
+//! [`Engine::handle`] stays on latin-buffer.
+//!
 //! This crate must stay free of Win32 and UI dependencies so the out-of-process
-//! service can own it, and the in-process TSF DLL does not have to.
+//! service can own the scaffold, and the in-process TSF DLL does not have to.
 
-/// Identifier of the scaffold schema. It buffers characters and commits them.
-/// It is not a pinyin or wubi implementation.
+pub mod pinyin_min;
+
+/// Identifier of the scaffold schema used by [`Engine`]. It buffers characters
+/// and commits them. It is not [`pinyin_min`].
 pub const SCHEMA_ID: &str = "latin-buffer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -202,5 +208,20 @@ mod tests {
         let update = engine.handle(key(KeyKind::Digit(1)));
         assert!(!update.consumed);
         assert!(update.candidates.is_empty());
+    }
+
+    #[test]
+    fn scaffold_schema_still_commits_raw_letters() {
+        assert_eq!(SCHEMA_ID, "latin-buffer");
+        let mut engine = Engine::new();
+        for ch in ['n', 'i', 'h', 'a', 'o'] {
+            let update = engine.handle(key(KeyKind::Char(ch)));
+            assert!(update.candidates.is_empty());
+            assert!(update.commit.is_none());
+        }
+        let committed = engine.handle(key(KeyKind::Space));
+        assert_eq!(committed.commit.as_deref(), Some("nihao"));
+        assert!(committed.candidates.is_empty());
+        assert_eq!(committed.preedit, "");
     }
 }
