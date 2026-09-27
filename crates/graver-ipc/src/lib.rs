@@ -225,4 +225,149 @@ mod tests {
             ProtocolError::TooLarge(MAX_FRAME_LEN + 1, MAX_FRAME_LEN)
         );
     }
+
+    #[test]
+    fn handwritten_text_service_frames_decode() {
+        let cases = [
+            (
+                br#"{"op":"ping","v":1,"id":1}"#.as_slice(),
+                Request::Ping { v: 1, id: 1 },
+            ),
+            (
+                br#"{"op":"reset","v":1,"id":2}"#.as_slice(),
+                Request::Reset { v: 1, id: 2 },
+            ),
+            (
+                br#"{"op":"deactivate","v":1,"id":3}"#.as_slice(),
+                Request::Deactivate { v: 1, id: 3 },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":4,"key":{"kind":"char","ch":"a","shift":false,"ctrl":false,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 4,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Char { ch: 'a' },
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":5,"key":{"kind":"space","shift":true,"ctrl":false,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 5,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Space,
+                        shift: true,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":12,"key":{"kind":"digit","n":3,"shift":false,"ctrl":true,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 12,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Digit { n: 3 },
+                        shift: false,
+                        ctrl: true,
+                        alt: false,
+                    },
+                },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":8,"key":{"kind":"backspace","shift":false,"ctrl":false,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 8,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Backspace,
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":11,"key":{"kind":"char","ch":"\"","shift":false,"ctrl":false,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 11,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Char { ch: '"' },
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":11,"key":{"kind":"char","ch":"\\","shift":false,"ctrl":false,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 11,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Char { ch: '\\' },
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            ),
+            (
+                br#"{"op":"key","v":1,"id":11,"key":{"kind":"char","ch":"\n","shift":false,"ctrl":false,"alt":false}}"#
+                    .as_slice(),
+                Request::Key {
+                    v: 1,
+                    id: 11,
+                    key: KeyMessage {
+                        kind: KeyKindMessage::Char { ch: '\n' },
+                        shift: false,
+                        ctrl: false,
+                        alt: false,
+                    },
+                },
+            ),
+        ];
+        for (payload, expected) in cases {
+            assert_eq!(decode_request(payload).unwrap(), expected);
+        }
+        let ni = "{\"op\":\"key\",\"v\":1,\"id\":11,\"key\":{\"kind\":\"char\",\"ch\":\"你\",\"shift\":false,\"ctrl\":false,\"alt\":false}}";
+        match decode_request(ni.as_bytes()).unwrap() {
+            Request::Key {
+                key:
+                    KeyMessage {
+                        kind: KeyKindMessage::Char { ch: '你' },
+                        ..
+                    },
+                ..
+            } => {}
+            other => panic!("unexpected request: {other:?}"),
+        }
+
+        let response = decode_response(
+            br#"{"op":"update","v":1,"id":4,"preedit":"a","candidates":[],"commit":null,"consumed":true}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            response,
+            Response::Update {
+                id: 4,
+                consumed: true,
+                commit: None,
+                ..
+            }
+        ));
+    }
 }
