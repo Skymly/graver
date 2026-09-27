@@ -572,6 +572,78 @@ mod tests {
     }
 
     #[test]
+    fn absent_service_returns_the_key_and_present_service_interprets_commit_and_preedit() {
+        let absent = unique_pipe_name("Absent");
+        assert_ne!(absent, PIPE_NAME);
+        let down = TextService::new(&absent);
+        down.activate_session();
+        assert!(!down.session_open());
+        assert_eq!(
+            down.handle_key(KeyRequest {
+                kind: KeyKind::Char('a'),
+                shift: false,
+                ctrl: false,
+                alt: false,
+            }),
+            KeyDecision::ReturnToHost
+        );
+
+        let name = unique_pipe_name("Interpret");
+        assert_ne!(name, PIPE_NAME);
+        let ready = AtomicBool::new(false);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&seen);
+        let replies = [
+            crate::protocol::encode_frame(
+                r#"{"op":"update","v":1,"id":1,"preedit":"你好","candidates":[],"commit":null,"consumed":true}"#
+                    .as_bytes(),
+            )
+            .unwrap(),
+            crate::protocol::encode_frame(
+                r#"{"op":"update","v":1,"id":2,"preedit":"","candidates":[{"text":"你好"}],"commit":"你好","consumed":true}"#
+                    .as_bytes(),
+            )
+            .unwrap(),
+            crate::protocol::encode_frame(
+                r#"{"op":"update","v":1,"id":3,"preedit":"","candidates":[],"commit":null,"consumed":false}"#
+                    .as_bytes(),
+            )
+            .unwrap(),
+        ];
+        thread::scope(|scope| {
+            let server = scope.spawn(|| stub_script(&name, &ready, &recorded, &replies));
+            wait_ready(&server, &ready);
+            let service = TextService::new(&name);
+            service.activate_session();
+            assert!(service.session_open());
+            assert_eq!(
+                service.handle_key(KeyRequest {
+                    kind: KeyKind::Char('你'),
+                    shift: false,
+                    ctrl: false,
+                    alt: false,
+                }),
+                KeyDecision::UpdatePreedit("你好".into())
+            );
+            assert_eq!(
+                service.handle_key(KeyRequest {
+                    kind: KeyKind::Space,
+                    shift: false,
+                    ctrl: false,
+                    alt: false,
+                }),
+                KeyDecision::CommitAndEnd("你好".into())
+            );
+            service.end_session();
+            assert!(!service.session_open());
+            server.join().unwrap();
+        });
+        let text = String::from_utf8(seen.lock().unwrap().clone()).unwrap();
+        assert!(text.contains("\"ch\":\"你\""));
+        assert!(text.contains("\"kind\":\"space\""));
+    }
+
+    #[test]
     fn virtual_keys_map_without_touching_the_keyboard() {
         let plain = map_virtual_key(u32::from(b'A'), false, false, false);
         assert_eq!(plain.kind, KeyKind::Char('a'));
@@ -632,6 +704,21 @@ mod tests {
         .unwrap();
         blocking_write(&pipe, &reply);
         let _ = blocking_read(&pipe, &mut buf);
+    }
+
+    fn stub_script(name: &str, ready: &AtomicBool, seen: &Mutex<Vec<u8>>, replies: &[Vec<u8>]) {
+        let pipe = create_stub(name);
+        ready.store(true, Ordering::SeqCst);
+        connect_stub(&pipe);
+        let mut buf = [0u8; 1024];
+        for reply in replies {
+            let n = match blocking_read(&pipe, &mut buf) {
+                Ok(n) if n > 0 => n,
+                _ => return,
+            };
+            seen.lock().unwrap().extend_from_slice(&buf[..n]);
+            blocking_write(&pipe, reply);
+        }
     }
 
     fn create_stub(name: &str) -> std::os::windows::io::OwnedHandle {
