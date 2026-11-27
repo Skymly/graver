@@ -2,6 +2,8 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
+[![CI](https://github.com/Skymly/graver/actions/workflows/check.yml/badge.svg)](https://github.com/Skymly/graver/actions/workflows/check.yml)
+
 Windows 输入法骨架。系统入口和组字引擎用 Rust，设置界面用 F# 和 Avalonia。
 
 现在不会注册到系统里，也不能在其他程序中输入。文本服务对象可以创建；激活后它保持一条管道连接，把按键交给组字服务。没有注册之前，记事本不会加载它。

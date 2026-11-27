@@ -2,6 +2,8 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
+[![CI](https://github.com/Skymly/graver/actions/workflows/check.yml/badge.svg)](https://github.com/Skymly/graver/actions/workflows/check.yml)
+
 Windows IME skeleton. The system entrypoint and composition engine are written in Rust, while the settings UI uses F# and Avalonia.
 
 It does not register into the OS or accept text input in other applications yet. The text service object can be instantiated; once activated, it maintains a pipe connection and forwards keystrokes to the composition service. Until registered, Notepad will not load it.

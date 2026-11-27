@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | **日本語**
 
+[![CI](https://github.com/Skymly/graver/actions/workflows/check.yml/badge.svg)](https://github.com/Skymly/graver/actions/workflows/check.yml)
+
 Windows IME の骨格実装です。システムエントリーポイントと変換エンジンは Rust、設定画面は F# と Avalonia で実装されています。
 
 現時点では OS への登録は行われず、他アプリケーションでの文字入力もできません。テキストサービスオブジェクト自体は生成可能で、有効化されると名前付きパイプ接続を維持してキー入力を変換サービスへ渡します。登録完了までメモ帳には読み込まれません。
