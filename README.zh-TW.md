@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文** | [日本語](README.ja.md)
 
+[![CI](https://github.com/Skymly/graver/actions/workflows/check.yml/badge.svg)](https://github.com/Skymly/graver/actions/workflows/check.yml)
+
 Windows 輸入法骨架。系統進入點與組字引擎使用 Rust，設定介面使用 F# 與 Avalonia。
 
 目前尚不會註冊進系統中，也無法在其他程式內輸入文字。文字服務物件已可建立；啟用後會維持一條具名管道連線，將按鍵轉交給組字服務。在完成註冊前，記事本不會載入它。
